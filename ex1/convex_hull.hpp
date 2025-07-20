@@ -7,14 +7,14 @@
 
 class ConvexHull {
 private:
-    std::vector<Point> graph;     // כל הנקודות
-    std::vector<Point> chPoints;  // מעטפת קמורה
+    std::vector<Point> graph;    
+    std::vector<Point> chPoints; 
 
 public:
     ConvexHull(std::vector<Point> graph);
     int orientation(Point a, Point b, Point c);
     
-    void findConvexHull(); // לא מחזירה, רק מעדכנת chPoints
+    void findConvexHull(); 
     double polygonArea() const;
 
     const std::vector<Point>& getConvexHullPoints() const { return chPoints; }
