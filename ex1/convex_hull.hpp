@@ -1,26 +1,23 @@
-
 #ifndef CONVEX_HULL_HPP
-#define CONVEX_HULL
+#define CONVEX_HULL_HPP
 
 #include <iostream>
 #include <vector>
-
-
-struct Point {
-    float x, y;
-
-    bool operator==(const Point& other) const {
-        return x == other.x && y == other.y;
-    }
-};
+#include "point.hpp"
 
 class ConvexHull {
 private:
-    std::vector<Point> graph;
+    std::vector<Point> graph;     // כל הנקודות
+    std::vector<Point> chPoints;  // מעטפת קמורה
 
 public:
     ConvexHull(std::vector<Point> graph);
+    int orientation(Point a, Point b, Point c);
     
+    void findConvexHull(); // לא מחזירה, רק מעדכנת chPoints
+    double polygonArea() const;
+
+    const std::vector<Point>& getConvexHullPoints() const { return chPoints; }
 };
 
 #endif
