@@ -1,12 +1,12 @@
-#include "convex_hull.hpp"
+#include "convex_jarvis.hpp"
 #include <algorithm>
 #include <cmath>
 
 // Constructor
-ConvexHull::ConvexHull(std::vector<Point> graph) : graph(graph) {}
+ConvexJarvis::ConvexJarvis(std::vector<Point> graph) : graph(graph) {}
 
 // Orientation of 3 points
-int ConvexHull::orientation(Point a, Point b, Point c) {
+int ConvexJarvis::orientation(Point a, Point b, Point c) {
     double v = a.getX() * (b.getY() - c.getY()) +
                b.getX() * (c.getY() - a.getY()) +
                c.getX() * (a.getY() - b.getY());
@@ -16,7 +16,7 @@ int ConvexHull::orientation(Point a, Point b, Point c) {
 }
 
 // Jarvis March (Gift Wrapping) algorithm
-void ConvexHull::findConvexHull() {
+void ConvexJarvis::findConvexJarvis() {
     int n = graph.size();
     chPoints.clear();
     
@@ -63,7 +63,7 @@ void ConvexHull::findConvexHull() {
 }
 
 // Calculate area of the convex hull polygon
-double ConvexHull::polygonArea() const {
+double ConvexJarvis::polygonArea() const {
     double area = 0.0;
     int n = chPoints.size();
     
