@@ -19,20 +19,23 @@ int ConvexHull::orientation(Point a, Point b, Point c) {
 void ConvexHull::findConvexHull() {
     int n = graph.size();
     chPoints.clear();
-
     if (n < 3) return;
-
+    
     Point p0 = *std::min_element(graph.begin(), graph.end(), [](Point a, Point b) {
-        return std::make_pair(a.getY(), a.getX()) < std::make_pair(b.getY(), b.getX());
+        // Fixed: Simple comparison without make_pair
+        if (a.getY() != b.getY()) {
+            return a.getY() < b.getY();
+        }
+        return a.getX() < b.getX();
     });
-
+    
     std::sort(graph.begin(), graph.end(), [this, &p0](const Point& a, const Point& b) {
         int o = orientation(p0, a, b);
         if (o == 0)
             return p0.distanceTo(a) < p0.distanceTo(b);
         return o < 0;
     });
-
+    
     std::vector<Point> stack;
     for (int i = 0; i < n; ++i) {
         while (stack.size() > 1 &&
@@ -40,7 +43,7 @@ void ConvexHull::findConvexHull() {
             stack.pop_back();
         stack.push_back(graph[i]);
     }
-
+    
     if (stack.size() >= 3)
         chPoints = stack;
 }
