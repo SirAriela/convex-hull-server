@@ -15,7 +15,7 @@ int ConvexHull::orientation(Point a, Point b, Point c) {
     return 0;
 }
 
-// מציאת מעטפת קמורה ושמירה בתוך chPoints
+
 void ConvexHull::findConvexHull() {
     int n = graph.size();
     chPoints.clear();
@@ -48,7 +48,7 @@ void ConvexHull::findConvexHull() {
         chPoints = stack;
 }
 
-// חישוב שטח המעטפת
+
 double ConvexHull::polygonArea() const {
     double area = 0.0;
     int n = chPoints.size();

@@ -1,0 +1,13 @@
+Newgraph 5
+0 0
+1 1
+2 1
+5 0
+4 1
+CH
+Newpoint 10 5
+CH
+Removepoint 10 5
+CH
+Newpoint 1 sdad
+Exit

@@ -1,0 +1,13 @@
+Newgraph 4
+0 0
+1 1
+3 1
+avd sfg
+CH
+Newpoint kljkl jlk
+CH
+Newgraph 3
+0 0
+1 1
+Exit
+Newgraph 3
