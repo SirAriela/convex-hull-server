@@ -16,15 +16,20 @@ $(EXE): $(OBJ1)
 $(EXE2): $(OBJ2)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
+
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $<
 
-coverage: convex_hull_app
+coverage: convex_hull_app convex_jarvis_app
 	./convex_hull_app < test1.txt
 	./convex_hull_app < test2.txt || true
+	./convex_jarvis_app < test1.txt
+	./convex_jarvis_app < test2.txt || true
 	@echo "=== Coverage Summary ==="
 	@gcov main.cpp 2>&1 | grep -A1 "File 'main\.cpp'"
 	@gcov convex_hull.cpp 2>&1 | grep -A1 "File 'convex_hull\.cpp'"
+	@gcov mainj.cpp 2>&1 | grep -A1 "File 'mainj\.cpp'"
+	@gcov convex_jarvis.cpp 2>&1 | grep -A1 "File 'convex_jarvis\.cpp'"
 
 clean:
-	rm -f *.o $(EXE) *.gcov *.gcda *.gcno
+	rm -f *.o $(EXE) $(EXE2) *.gcov *.gcda *.gcno
