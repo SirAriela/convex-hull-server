@@ -1,10 +1,23 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra
+CXXFLAGS = -std=c++17 -Wall -Wextra -Wno-psabi -I../ex3
+PROFILE_FLAGS = -pg -O2
+SRC = convex_hull_server.cpp
+OBJ = $(SRC:.cpp=.o)
+EXE = convex_hull_server
 
-all: convex_hull_server
+all: $(EXE)
 
-convex_hull_server: convex_hull_server.cpp ../ex3/convex_hull.cpp ../ex3/point.cpp
-	$(CXX) $(CXXFLAGS) -I../ex3 -o $@ $^
+$(EXE): $(OBJ) ../ex3/convex_hull.o ../ex3/point.o
+	$(CXX) $(CXXFLAGS) $(PROFILE_FLAGS) -o $@ $^
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $<
+
+../ex3/convex_hull.o: ../ex3/convex_hull.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+../ex3/point.o: ../ex3/point.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f convex_hull_server
+	rm -f *.o $(EXE) *.gcov *.gcda *.gcno ../ex3/convex_hull.o ../ex3/point.o

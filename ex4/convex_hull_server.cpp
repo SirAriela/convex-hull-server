@@ -224,7 +224,7 @@ int main(int argc, char *argv[])
                 {
                     buffer[len] = '\0';
                     
-                    // ניקוי פשוט וקיצוני של כל התווים הלא רצויים
+                   
                     char cleaned[256];
                     int j = 0;
                     for (int k = 0; k < len && j < 255; k++) {
