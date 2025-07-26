@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra
+CXXFLAGS = -std=c++17 -Wall -Wextra -fprofile-arcs -ftest-coverage
 
 # קבצי מקור
 SRC = main.cpp convex_hull.cpp convex_jarvis.cpp point.cpp mainj.cpp
