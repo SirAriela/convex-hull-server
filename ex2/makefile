@@ -24,9 +24,8 @@ stage2: all
 	@echo ""
 	@echo "Jarvis March:"
 	@time bash -c "python3 -c \"print('$(SIZE)'); import random; [print(random.randint(0,1000), random.randint(0,1000)) for _ in range($(SIZE))]\" | ./$(JARVIS_EXEC) >/dev/null"
-	@echo "Cleaning up binaries..."
-	@rm -f $(GRAHAM_EXEC) $(JARVIS_EXEC) gmon.out
-	@echo "All files cleaned up."
+    @rm -f $(GRAHAM_EXEC) $(JARVIS_EXEC) gmon.out
+	@echo "Files cleaned up."
 
 clean:
 	rm -f $(GRAHAM_EXEC) $(JARVIS_EXEC) gmon.out
