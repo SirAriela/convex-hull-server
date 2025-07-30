@@ -12,6 +12,7 @@
 #include <iostream>
 #include <thread>
 #include <mutex>
+#include <chrono>
 #include "../ex3/convex_hull.hpp"
 #include "../ex3/point.hpp"
 #include "../ex8/reactor.hpp"
@@ -22,22 +23,47 @@
 // Function declarations
 void* handleClient(int client_fd);
 
-// Global variable to control server shutdown
-volatile sig_atomic_t running = 1;
-
-void handle_sigint(int sig)
-{
-    (void)sig;
-    running = 0;
-    printf("\nSIGINT received — shutting down server gracefully...\n");
-}
-
 //------------------- Thread-safe Graph functions ------------------------------------
 
 // Global shared graph and convex hull object - WITH MUTEX PROTECTION
 std::vector<Point> shared_points;
 ConvexHull* ch = nullptr;
 std::mutex graph_mutex;
+
+// Global variable to control server shutdown
+volatile sig_atomic_t running = 1;
+int listen_fd = -1;
+pthread_t proactor_thread = 0;
+
+void handle_sigint(int sig)
+{
+    (void)sig;
+    running = 0;
+    printf("\nSIGINT received — shutting down server gracefully...\n");
+    
+    // Close listening socket to stop accepting new connections
+    if (listen_fd > 0) {
+        printf("Closing listening socket: fd=%d\n", listen_fd);
+        shutdown(listen_fd, SHUT_RDWR);
+        close(listen_fd);
+        listen_fd = -1;
+    }
+    
+    // Stop proactor
+    if (proactor_thread != 0) {
+        printf("Stopping proactor...\n");
+        stopProactor(proactor_thread);
+    }
+    
+    // Clean up memory
+    if (ch != nullptr) {
+        delete ch;
+        ch = nullptr;
+    }
+    
+    printf("Server shut down gracefully.\n");
+    exit(0);
+}
 
 void initializeGraph() {
     std::lock_guard<std::mutex> lock(graph_mutex);
@@ -51,6 +77,15 @@ void initializeGraph() {
 
 void addPointToGraph(float x, float y) {
     std::lock_guard<std::mutex> lock(graph_mutex);
+    
+    // Check if point already exists
+    for (const auto& p : shared_points) {
+        if (std::abs(p.getX() - x) < 0.001f && std::abs(p.getY() - y) < 0.001f) {
+            printf("Point (%.2f, %.2f) already exists, skipping\n", x, y);
+            return;
+        }
+    }
+    
     shared_points.emplace_back(x, y);
     if (ch != nullptr) {
         delete ch;
@@ -116,7 +151,7 @@ size_t getPointCount() {
 //------------------------------------------------------------------------
 
 void* handleClient(int client_fd) {
-    printf("[Thread %ld] Handling client fd=%d\n", std::this_thread::get_id(), client_fd);
+    printf("[Thread %lu] Handling client fd=%d\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), client_fd);
     
     // Send welcome message
     const char* welcome = "Connected to Convex Hull Server\n"
@@ -128,7 +163,11 @@ void* handleClient(int client_fd) {
         ssize_t len = read(client_fd, buffer, sizeof(buffer) - 1);
 
         if (len <= 0) {
-            printf("[Thread %ld] Client disconnected: fd=%d\n", std::this_thread::get_id(), client_fd);
+            if (len == 0) {
+                printf("[Thread %lu] Client disconnected gracefully: fd=%d\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), client_fd);
+            } else {
+                printf("[Thread %lu] Client connection error: fd=%d (%s)\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), client_fd, strerror(errno));
+            }
             break;
         }
 
@@ -145,7 +184,7 @@ void* handleClient(int client_fd) {
         cleaned[j] = '\0';
         strcpy(buffer, cleaned);
         
-        printf("[Thread %ld] Received command: '%s'\n", std::this_thread::get_id(), buffer);
+        printf("[Thread %lu] Received command: '%s'\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), buffer);
 
         // Parse commands
         if (strcmp(buffer, "Newgraph") == 0) {
@@ -207,14 +246,14 @@ void* handleClient(int client_fd) {
             }
         }
         else {
-            printf("[Thread %ld] Unknown command: '%s'\n", std::this_thread::get_id(), buffer);
+            printf("[Thread %lu] Unknown command: '%s'\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), buffer);
             const char* error = "Unknown command. Available: Newgraph, Newpoint x y, Removepoint x y, CH\n";
             send(client_fd, error, strlen(error), 0);
         }
     }
     
     close(client_fd);
-    printf("[Thread %ld] Client thread ended for fd=%d\n", std::this_thread::get_id(), client_fd);
+    printf("[Thread %lu] Client thread ended for fd=%d\n", std::hash<std::thread::id>{}(std::this_thread::get_id()), client_fd);
     return nullptr;
 }
 
@@ -271,8 +310,11 @@ int main(int argc, char *argv[])
     printf("  Removepoint x y - Remove point from graph\n");
     printf("  CH - Compute convex hull\n");
 
+    // Store listen_fd globally for signal handler
+    ::listen_fd = listen_fd;
+    
     // proactor thread
-    pthread_t proactor_thread = startProactor(listen_fd, handleClient);
+    ::proactor_thread = startProactor(listen_fd, handleClient);
 
     // Main thread handles stdin
     char buffer[256];
@@ -300,10 +342,13 @@ int main(int argc, char *argv[])
     printf("Shutting down server...\n");
     running = 0;
     
-    // Wait for accept thread to finish
+    // Wait for proactor thread to finish
     stopProactor(proactor_thread);
     
-    close(listen_fd);
+    if (listen_fd > 0) {
+        shutdown(listen_fd, SHUT_RDWR);
+        close(listen_fd);
+    }
 
     printf("Waiting for connections to close...\n");
     std::this_thread::sleep_for(std::chrono::seconds(2));

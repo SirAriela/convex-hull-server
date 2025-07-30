@@ -54,6 +54,15 @@ private:
                 // Process ready file descriptors
                 for (int fd : current_fds) {
                     if (FD_ISSET(fd, &readfds)) {
+                        // Check if fd is still in the current set (might have been removed)
+                        {
+                            std::lock_guard<std::mutex> lock(mutex);
+                            if (fds.find(fd) == fds.end()) {
+                                printf("DEBUG: fd=%d was removed, skipping\n", fd);
+                                continue;
+                            }
+                        }
+                        
                         auto handler_it = current_handlers.find(fd);
                         if (handler_it != current_handlers.end()) {
                             printf("DEBUG: Calling handler for fd=%d\n", fd);

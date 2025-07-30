@@ -26,6 +26,7 @@ void handle_sigint(int sig)
   (void)sig; // Explicitly mark parameter as used
   running = 0;
   printf("\nSIGINT received — shutting down server gracefully...\n");
+  printf("Waiting for current operations to complete...\n");
 }
 
 //------------------- Graph functions ------------------------------------
@@ -172,6 +173,13 @@ int main(int argc, char *argv[])
             if (!running)
                 break;
             perror("poll");
+            break;
+        }
+
+        // Check if we should shutdown
+        if (!running)
+        {
+            printf("Shutdown signal received, closing all connections...\n");
             break;
         }
 
@@ -364,14 +372,22 @@ int main(int argc, char *argv[])
 
     // Cleanup
     printf("Shutting down server...\n");
+    
+    // Close all client connections
     for (int i = 2; i < nfds; i++)
     {
+        printf("Closing client connection: fd=%d\n", fds[i].fd);
         close(fds[i].fd);
     }
+    
+    // Close listening socket
+    printf("Closing listening socket: fd=%d\n", listen_fd);
     close(listen_fd);
     
+    // Clean up memory
     if (ch != nullptr) {
         delete ch;
+        ch = nullptr;
     }
     
     printf("Server terminated.\n");

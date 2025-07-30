@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <thread>
+#include <chrono>
 #include "../ex3/convex_hull.hpp"
 #include "../ex3/point.hpp"
 
@@ -35,33 +38,39 @@ void removePointFromGraph(float x, float y);
 void computeConvexHull();
 void clientHandler(int client_fd);
 void acceptHandler(int listen_fd);
+void cleanupAllClients();
 
 // Signal handling
 volatile sig_atomic_t running = 1;
 void handle_sigint(int sig) {
-    printf("\nReceived SIGINT, shutting down...\n");
+    printf("\nReceived SIGINT, shutting down gracefully...\n");
     running = 0;
     
-    // Close all client connections
-    {
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        for (int client_fd : active_clients) {
-            printf("Closing client connection: fd=%d\n", client_fd);
-            close(client_fd);
-        }
-        active_clients.clear();
-    }
+    // Give a moment for current operations to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
     
+    // Close all client connections
+    cleanupAllClients();
+    
+    // Give another moment for cleanup to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    // Stop reactor
     if (reactorInstance) {
+        printf("Stopping reactor...\n");
         stopReactor(reactorInstance);
         reactorInstance = nullptr;
     }
     
+    // Close listening socket
     if (listen_fd > 0) {
+        printf("Closing listening socket: fd=%d\n", listen_fd);
+        shutdown(listen_fd, SHUT_RDWR);
         close(listen_fd);
         listen_fd = -1;
     }
     
+    // Clean up memory
     if (ch) {
         delete ch;
         ch = nullptr;
@@ -138,9 +147,42 @@ int main(int argc, char* argv[]) {
     // Main server loop - just wait for shutdown signal
     while (running) {
         sleep(1);
+        
+        // Check if we should shutdown
+        if (!running) {
+            printf("Shutdown signal received in main loop\n");
+            break;
+        }
     }
     
-    // Cleanup is handled in signal handler
+    // Additional cleanup in case signal handler didn't run
+    printf("Main loop ended, performing final cleanup...\n");
+    
+    // Give a moment for current operations to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    // Clean up all clients
+    cleanupAllClients();
+    
+    // Give another moment for cleanup to complete
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    if (reactorInstance) {
+        stopReactor(reactorInstance);
+        reactorInstance = nullptr;
+    }
+    
+    if (listen_fd > 0) {
+        shutdown(listen_fd, SHUT_RDWR);
+        close(listen_fd);
+        listen_fd = -1;
+    }
+    
+    if (ch) {
+        delete ch;
+        ch = nullptr;
+    }
+    
     return 0;
 }
 
@@ -174,6 +216,7 @@ void acceptHandler(int listen_fd) {
             std::lock_guard<std::mutex> lock(clientsMutex);
             active_clients.erase(client_fd);
         }
+        shutdown(client_fd, SHUT_RDWR);  // Force close the connection
         close(client_fd);
         return;
     }
@@ -186,28 +229,53 @@ void acceptHandler(int listen_fd) {
     ssize_t sent = send(client_fd, welcome, strlen(welcome), MSG_NOSIGNAL);
     if (sent < 0) {
         perror("send welcome message");
-        // Client will be cleaned up when the socket is detected as closed
+        // Clean up client immediately if welcome message fails
+        printf("Failed to send welcome message to fd=%d, cleaning up\n", client_fd);
+        removeFdFromReactor(reactorInstance, client_fd);
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            active_clients.erase(client_fd);
+        }
+        close(client_fd);
     }
 }
 
 // ---------------- clientHandler -------------------
 void clientHandler(int client_fd) {
+    // Check if client is still in active clients before processing
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        if (active_clients.find(client_fd) == active_clients.end()) {
+            printf("Client fd=%d no longer active, skipping\n", client_fd);
+            return;
+        }
+    }
+    
+    // Set socket to non-blocking mode for better error detection
+    int flags = fcntl(client_fd, F_GETFL, 0);
+    fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+    
     char buffer[256];
     ssize_t len = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
     
     if (len <= 0) {
         if (len == 0) {
             printf("Client disconnected gracefully: fd=%d\n", client_fd);
+        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // No data available, this is normal for non-blocking sockets
+            return;
         } else {
             printf("Client connection error: fd=%d (%s)\n", client_fd, strerror(errno));
         }
         
         // Remove from reactor and active clients list
+        printf("Cleaning up disconnected client: fd=%d\n", client_fd);
         removeFdFromReactor(reactorInstance, client_fd);
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
             active_clients.erase(client_fd);
         }
+        shutdown(client_fd, SHUT_RDWR);  // Force close the connection
         close(client_fd);
         return;
     }
@@ -226,6 +294,15 @@ void clientHandler(int client_fd) {
     }
     
     printf("Received from fd=%d: '%s'\n", client_fd, buffer);
+
+    // Check if client is still connected before processing
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        if (active_clients.find(client_fd) == active_clients.end()) {
+            printf("Client fd=%d no longer in active clients, skipping command\n", client_fd);
+            return;
+        }
+    }
 
     // Process command with graph mutex
     std::string response;
@@ -281,20 +358,40 @@ void clientHandler(int client_fd) {
         }
     }
 
+    // Check if client is still connected before sending response
+    {
+        std::lock_guard<std::mutex> lock(clientsMutex);
+        if (active_clients.find(client_fd) == active_clients.end()) {
+            printf("Client fd=%d no longer in active clients, skipping response\n", client_fd);
+            return;
+        }
+    }
+
     // Send response
     ssize_t sent = send(client_fd, response.c_str(), response.length(), MSG_NOSIGNAL);
     if (sent < 0) {
         if (errno == EPIPE || errno == ECONNRESET) {
             printf("Client fd=%d disconnected while sending response\n", client_fd);
             // Remove from reactor and clean up
+            printf("Cleaning up client after send error: fd=%d\n", client_fd);
             removeFdFromReactor(reactorInstance, client_fd);
             {
                 std::lock_guard<std::mutex> lock(clientsMutex);
                 active_clients.erase(client_fd);
             }
+            shutdown(client_fd, SHUT_RDWR);  // Force close the connection
             close(client_fd);
         } else {
             perror("send response");
+            // Also clean up on other send errors
+            printf("Cleaning up client after send error: fd=%d\n", client_fd);
+            removeFdFromReactor(reactorInstance, client_fd);
+            {
+                std::lock_guard<std::mutex> lock(clientsMutex);
+                active_clients.erase(client_fd);
+            }
+            shutdown(client_fd, SHUT_RDWR);  // Force close the connection
+            close(client_fd);
         }
     }
 }
@@ -311,6 +408,14 @@ void initializeGraph() {
 }
 
 void addPointToGraph(float x, float y) {
+    // Check if point already exists
+    for (const auto& p : shared_points) {
+        if (std::abs(p.getX() - x) < 0.001f && std::abs(p.getY() - y) < 0.001f) {
+            printf("DEBUG: Point (%.2f, %.2f) already exists, skipping\n", x, y);
+            return;
+        }
+    }
+    
     shared_points.emplace_back(x, y);
     if (ch) {
         delete ch;
@@ -341,5 +446,29 @@ void computeConvexHull() {
     if (ch && shared_points.size() >= 3) {
         ch->findConvexHull();
         printf("DEBUG: Computed convex hull for %zu points\n", shared_points.size());
+    }
+}
+
+void cleanupAllClients() {
+    std::lock_guard<std::mutex> lock(clientsMutex);
+    printf("Cleaning up all %zu client connections...\n", active_clients.size());
+    
+    // Create a copy of the set to avoid iterator invalidation
+    std::set<int> clients_to_close = active_clients;
+    active_clients.clear();
+    
+    // Release the lock before closing sockets
+    lock.~lock_guard();
+    
+    for (int client_fd : clients_to_close) {
+        printf("Closing client connection: fd=%d\n", client_fd);
+        removeFdFromReactor(reactorInstance, client_fd);
+        
+        // Set socket to blocking mode before shutdown
+        int flags = fcntl(client_fd, F_GETFL, 0);
+        fcntl(client_fd, F_SETFL, flags & ~O_NONBLOCK);
+        
+        shutdown(client_fd, SHUT_RDWR);  // Force close the connection
+        close(client_fd);
     }
 }
