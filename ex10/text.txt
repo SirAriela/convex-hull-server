@@ -1,0 +1,14 @@
+Newgraph
+Newpoint 10 10
+Newpoint 0 0
+Newpoint 10 0
+CH
+Newpoint 100 100
+CH
+Newpoint 200 200
+CH
+Removepoint 200 200
+Removepoint 100 100
+CH
+Newpoint 50 50
+CHצשלק
