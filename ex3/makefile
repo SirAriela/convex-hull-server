@@ -23,3 +23,4 @@ coverage: convex_hull_app
 
 clean:
 	rm -f *.o $(EXE) *.gcov *.gcda *.gcno
+
